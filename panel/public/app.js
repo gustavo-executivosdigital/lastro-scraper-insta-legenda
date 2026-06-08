@@ -61,7 +61,9 @@ function analysisBlock(item) {
     const pos = a.positivePct || 0;
     const neu = a.neutralPct || 0;
     const neg = a.negativePct || 0;
+    const subj = a.subject ? ` em relação a <strong>${esc(a.subject)}</strong>` : '';
     sentiment = `
+      <div class="rel-note">Sentimento${subj}</div>
       <div class="sentiment-bar">
         <span class="s-pos" style="width:${pos}%"></span>
         <span class="s-neu" style="width:${neu}%"></span>
@@ -70,6 +72,10 @@ function analysisBlock(item) {
       <div class="sentiment-legend">
         <span>👍 ${pos}%</span><span>😐 ${neu}%</span><span>👎 ${neg}%</span>
       </div>
+      ${a.subjectStance ? `<div class="stance">🎯 ${esc(a.subjectStance)}</div>` : ''}
+      ${a.criticismTarget ? `<div class="rel-line"><b>Crítica contra:</b> ${esc(a.criticismTarget)}</div>` : ''}
+      ${a.beneficiary ? `<div class="rel-line"><b>Favorece:</b> ${esc(a.beneficiary)}</div>` : ''}
+      ${a.context ? `<div class="rel-line"><b>Contexto:</b> ${esc(a.context)}</div>` : ''}
       ${a.problem ? `<div class="problem">⚡ ${esc(a.problem)}</div>` : ''}
       ${a.summary ? `<div class="reason">${esc(a.summary)}</div>` : ''}
       ${typeof a.commentsAnalyzed === 'number' ? `<div class="reason">${a.commentsAnalyzed} comentários analisados</div>` : ''}

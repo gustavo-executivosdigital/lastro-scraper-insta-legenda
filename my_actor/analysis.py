@@ -104,31 +104,54 @@ async def analyze_sentiment(
     model: str,
     caption: str,
     comments: list[str],
+    subject: str,
 ) -> dict:
-    """Summarize the sentiment of comments about a (likely political) post."""
+    """Summarize comment sentiment RELATIVE TO the search subject (the keyword).
+
+    The key idea: opinions are measured toward ``subject`` (e.g. "bolsonaro"), not
+    toward whoever else the comment mentions. A comment that attacks a third party
+    ("the cop is awful") can be POSITIVE toward the subject if it sides with them.
+    The model must reason about who the criticism targets and who it favors.
+    """
     numbered = '\n'.join(f'{i + 1}. {text}' for i, text in enumerate(comments))
     system_prompt = (
-        'Voce e um analista de opiniao publica. Recebe a legenda de um post do Instagram '
-        '(provavelmente politico) e os comentarios mais curtidos. Estime a distribuicao de '
-        'opinioes (positiva, negativa, neutra) sobre o tema/post e descreva o problema ou '
-        'tensao central. As porcentagens devem somar aproximadamente 100. '
-        'Responda SOMENTE em JSON valido, em portugues.'
+        'Voce e um analista de opiniao publica especializado em contexto politico. '
+        'Sua tarefa e medir o sentimento dos comentarios EM RELACAO AO SUJEITO pesquisado, '
+        'nao em relacao a outras pessoas citadas. '
+        'Exemplo critico: se o sujeito e "bolsonaro" e o post fala "policial prende bolsonaro", '
+        'um comentario como "o policial e horrivel" e NEGATIVO em relacao ao policial, mas '
+        'POSITIVO/favoravel em relacao ao sujeito (bolsonaro), porque defende o sujeito. '
+        'Sempre raciocine: este comentario apoia ou ataca o SUJEITO? '
+        'As porcentagens (positiva/negativa/neutra) se referem A POSTURA EM RELACAO AO SUJEITO e '
+        'devem somar aproximadamente 100. Responda SOMENTE em JSON valido, em portugues.'
     )
     user_prompt = (
+        f'SUJEITO pesquisado: "{subject}"\n\n'
         'Legenda do post:\n'
         f'"""{caption or ""}"""\n\n'
         f'Comentarios (mais curtidos primeiro):\n{numbered}\n\n'
         'Retorne JSON no formato: {'
-        '"positivePct": inteiro, "negativePct": inteiro, "neutralPct": inteiro, '
-        '"problem": "qual e o problema/tensao central em uma frase", '
+        '"positivePct": inteiro,  // % de comentarios favoraveis AO SUJEITO\n'
+        '"negativePct": inteiro,  // % de comentarios contrarios AO SUJEITO\n'
+        '"neutralPct": inteiro,\n'
+        '"subjectStance": "a percepcao geral em relacao ao sujeito, em uma frase",\n'
+        '"criticismTarget": "contra quem/o que esta a carga negativa dos comentarios",\n'
+        '"beneficiary": "a favor de quem/o que a opiniao pende",\n'
+        '"context": "o que esta acontecendo na situacao mapeada (post + comentarios)",\n'
+        '"problem": "qual e o problema/tensao central em uma frase",\n'
         '"summary": "resumo curto da percepcao geral"}'
     )
     content = await groq_chat(client, api_key, model, system_prompt, user_prompt)
     parsed = _safe_json(content)
     return {
+        'subject': subject,
         'positivePct': _clamp_pct(parsed.get('positivePct')),
         'negativePct': _clamp_pct(parsed.get('negativePct')),
         'neutralPct': _clamp_pct(parsed.get('neutralPct')),
+        'subjectStance': str(parsed.get('subjectStance') or '').strip(),
+        'criticismTarget': str(parsed.get('criticismTarget') or '').strip(),
+        'beneficiary': str(parsed.get('beneficiary') or '').strip(),
+        'context': str(parsed.get('context') or '').strip(),
         'problem': str(parsed.get('problem') or '').strip(),
         'summary': str(parsed.get('summary') or '').strip(),
     }

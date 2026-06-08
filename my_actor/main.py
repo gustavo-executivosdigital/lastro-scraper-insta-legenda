@@ -306,6 +306,7 @@ async def scrape_comments_for_posts(post_urls: list[str], max_comments: int) -> 
 async def run_political_analysis(
     posts: list[dict],
     *,
+    subject: str,
     api_key: str,
     model: str,
     max_comments: int,
@@ -359,7 +360,9 @@ async def run_political_analysis(
                 continue
 
             try:
-                sentiment = await analyze_sentiment(client, api_key, model, post.get('caption') or '', texts)
+                sentiment = await analyze_sentiment(
+                    client, api_key, model, post.get('caption') or '', texts, subject
+                )
             except Exception as exc:  # noqa: BLE001 - best-effort
                 Actor.log.warning(f'Sentiment analysis failed for {post.get("url")}: {exc}')
                 post['analysis']['commentsAnalyzed'] = len(texts)
@@ -515,7 +518,11 @@ async def main() -> None:
             else:
                 Actor.log.info(f'Running AI political analysis on {len(ordered)} posts with model "{groq_model}"...')
                 await run_political_analysis(
-                    ordered, api_key=groq_api_key, model=groq_model, max_comments=max_comments
+                    ordered,
+                    subject=keyword,
+                    api_key=groq_api_key,
+                    model=groq_model,
+                    max_comments=max_comments,
                 )
 
         for post in ordered:
