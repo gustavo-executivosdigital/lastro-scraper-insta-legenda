@@ -21,13 +21,14 @@ This Actor runs on the [Apify platform](https://apify.com), so you get API acces
 
 ## How it works
 
-Instagram has no public full-text caption search — the only public way to discover posts is through hashtags. So this Actor composes Apify's well-maintained [`apify/instagram-scraper`](https://apify.com/apify/instagram-scraper) to gather candidates, then matches purely on the **caption text**:
+Instagram has no public full-text caption search, so this Actor discovers candidate posts two complementary ways and then matches purely on the **caption text**:
 
-1. Your keyword is turned into several hashtag seeds to cast a wide net: the whole phrase (`very happy` → `#veryhappy`) **and each individual word** (`#very`, `#happy`).
-2. `apify/instagram-scraper` scrapes candidate posts from all of those hashtags.
-3. The Actor keeps only the posts whose **caption actually contains your keyword** (case-insensitive substring match), de-duplicates them, and saves them to the dataset.
+1. **Google discovery (real caption search).** It runs [`apify/google-search-scraper`](https://apify.com/apify/google-search-scraper) with a surgical dork — `site:instagram.com "your keyword" -inurl:/accounts/ -inurl:/explore/ -inurl:/tags/` — that targets actual post pages. Google has indexed the caption text of many public posts (it sits in each post's title/meta description), so this finds posts by their caption **even when they used no related hashtag**.
+2. **Hashtag discovery (extra coverage).** Your keyword also becomes hashtag seeds — the whole phrase (`very happy` → `#veryhappy`) plus each word (`#very`, `#happy`) — to widen the pool.
+3. **One accurate caption scrape.** All discovered URLs are scraped in a single [`apify/instagram-scraper`](https://apify.com/apify/instagram-scraper) run to get full, accurate captions.
+4. **Caption filter.** The Actor keeps only posts whose **caption actually contains your keyword** (case-insensitive substring match), de-duplicates them, and saves them to the dataset.
 
-This means a post that writes "very happy" in its caption is captured **even if it never used the `#veryhappy` hashtag**, as long as it can be reached through one of the seed hashtags.
+The design **degrades gracefully**: if Google discovery fails or returns nothing, the run continues with hashtag discovery (and vice versa), so a single failure never aborts the whole job.
 
 Because it calls the underlying scraper, that run consumes its own Apify usage in addition to this Actor's compute.
 
@@ -87,12 +88,13 @@ Each item in the dataset is one matching post. You can download the dataset in v
 
 ## Cost estimation
 
-Most of the cost comes from the underlying `apify/instagram-scraper` run, which is billed per result. A higher `maxPosts` scrapes more candidate posts (the Actor fetches roughly 3× your `maxPosts` to allow for caption filtering). Start with a small `maxPosts` to gauge cost, then scale up. See the [Apify pricing page](https://apify.com/pricing) and the `apify/instagram-scraper` pricing for current rates.
+This Actor composes two underlying Actors: `apify/google-search-scraper` (one lightweight search to discover post URLs) and `apify/instagram-scraper` (billed per scraped post — the main cost). A higher `maxPosts` scrapes more candidate posts (the Actor fetches roughly 3× your `maxPosts` to allow for caption filtering). Start with a small `maxPosts` to gauge cost, then scale up. See the [Apify pricing page](https://apify.com/pricing) and each underlying Actor's pricing for current rates.
 
 ## Tips & advanced options
 
 - **Short, common keywords** (like `stanley`) return more matches than rare phrases.
-- Multi-word keywords are searched across several hashtags (the combined phrase plus each word), but results are always filtered by the exact phrase in the caption text.
+- Discovery uses Google's caption index plus hashtags; results are always filtered by the exact phrase in the caption text.
+- Use **exact phrases** for precision (`very happy` matches captions containing those words together). Common phrases return more, indexed results.
 - Lower `maxPosts` for faster, cheaper runs; raise it for broader coverage.
 - Schedule the Actor (Schedules tab) to monitor a keyword over time.
 

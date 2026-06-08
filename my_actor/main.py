@@ -1,15 +1,22 @@
 """Main entry point for the Instagram Caption Keyword Search Actor.
 
 This Actor takes a keyword (for example ``stanley`` or ``very happy``) and returns
-Instagram posts whose caption contains that keyword.
+Instagram posts whose **caption** contains that keyword.
 
-It works by composing Apify's battle-tested ``apify/instagram-scraper`` Actor:
+Instagram has no public caption full-text search, so we discover candidate posts
+two complementary ways and then match purely on the real caption text:
 
-1. The keyword is turned into a hashtag seed (``very happy`` -> ``#veryhappy``) so we
-   have a pool of candidate posts that are likely to mention the keyword.
-2. ``apify/instagram-scraper`` scrapes those candidate posts.
-3. We keep only the posts whose caption actually contains the keyword as a
-   case-insensitive substring, and push them to the dataset.
+1. **Google discovery** - we ask ``apify/google-search-scraper`` for
+   ``site:instagram.com "keyword"``. Google has indexed the caption text of many
+   public posts, so this finds posts by their caption even with no related hashtag.
+2. **Hashtag discovery** - we seed Instagram hashtags derived from the keyword to
+   widen the candidate pool.
+
+All discovered URLs are scraped in a single ``apify/instagram-scraper`` run to get
+full, accurate captions, which we then filter, de-duplicate, and store.
+
+The design degrades gracefully: if one discovery method fails or returns nothing,
+the Actor continues with the other instead of aborting the whole run.
 """
 
 from __future__ import annotations
@@ -19,22 +26,21 @@ import re
 
 from apify import Actor, Event
 
-# The public Apify Store Actor we compose for the heavy lifting of scraping Instagram.
+# Public Apify Store Actors we compose.
 INSTAGRAM_SCRAPER_ACTOR = 'apify/instagram-scraper'
+GOOGLE_SEARCH_ACTOR = 'apify/google-search-scraper'
+
+# Limit how many hashtag seeds and Google URLs we feed downstream, to keep the
+# Instagram scrape efficient and its cost predictable.
+MAX_HASHTAG_SEEDS = 3
+INSTAGRAM_POST_URL_RE = re.compile(r'https?://(?:www\.)?instagram\.com/(?:p|reel|tv)/[^/?#]+', re.IGNORECASE)
 
 
 def keyword_to_hashtags(keyword: str) -> list[str]:
     """Build hashtag seeds from a keyword to gather candidate posts.
 
-    Instagram offers no caption full-text search, so the only public way to
-    discover posts is through hashtags. We then filter those candidates by their
-    real caption text. To avoid missing posts that mention the phrase in the
-    caption without using the exact combined hashtag, we seed with:
-
-      - the whole keyword as one hashtag (``very happy`` -> ``veryhappy``)
-      - each individual word as its own hashtag (``very``, ``happy``)
-
-    This widens the candidate pool; the caption filter then does the real matching.
+    We seed with the whole keyword as one hashtag (``very happy`` -> ``veryhappy``)
+    plus each individual word (``very``, ``happy``), capped at ``MAX_HASHTAG_SEEDS``.
     """
     seeds: list[str] = []
     combined = re.sub(r'[^0-9a-z]', '', keyword.lower())
@@ -44,7 +50,21 @@ def keyword_to_hashtags(keyword: str) -> list[str]:
         tag = re.sub(r'[^0-9a-z]', '', word)
         if tag and tag not in seeds:
             seeds.append(tag)
-    return seeds
+    return seeds[:MAX_HASHTAG_SEEDS]
+
+
+def canonical_post_url(url: str) -> str | None:
+    """Normalize an Instagram post URL to ``https://www.instagram.com/p/<code>/``.
+
+    Returns ``None`` if the URL is not an individual post/reel/tv URL.
+    """
+    match = INSTAGRAM_POST_URL_RE.match(url or '')
+    if not match:
+        return None
+    # Strip query string / fragment and normalize the host + trailing slash.
+    base = match.group(0)
+    base = re.sub(r'https?://(?:www\.)?instagram\.com', 'https://www.instagram.com', base, flags=re.IGNORECASE)
+    return base.rstrip('/') + '/'
 
 
 def caption_contains(caption: str | None, keyword: str) -> bool:
@@ -84,6 +104,61 @@ def get_dataset_id(run: object) -> str | None:
     return getattr(run, 'default_dataset_id', None)
 
 
+def build_google_query(keyword: str) -> str:
+    """Build a surgical Google dork that targets Instagram *post* captions.
+
+    - ``site:instagram.com`` restricts to Instagram.
+    - The quoted keyword forces an exact-phrase match against the indexed caption
+      (Instagram exposes the caption in each post page's title/meta description).
+    - The negative ``-inurl:`` operators strip profile, explore and hashtag pages so
+      more of Google's result budget is spent on actual post URLs. Individual post
+      URLs (``/p/``, ``/reel/``, ``/tv/``) are then confirmed in code.
+    """
+    return f'site:instagram.com "{keyword}" -inurl:/accounts/ -inurl:/explore/ -inurl:/tags/'
+
+
+async def discover_post_urls_via_google(keyword: str, limit: int) -> list[str]:
+    """Find Instagram post URLs whose indexed caption contains the keyword.
+
+    Uses Google as a caption index. Any failure is swallowed and logged - the
+    caller falls back to hashtag discovery.
+    """
+    urls: list[str] = []
+    try:
+        query = build_google_query(keyword)
+        google_input = {
+            'queries': query,
+            'resultsPerPage': 100,
+            # Pull deeper only when the user asks for more posts (1-2 pages).
+            'maxPagesPerQuery': 1 if limit <= 100 else 2,
+            'mobileResults': False,
+        }
+        Actor.log.info(f'Calling {GOOGLE_SEARCH_ACTOR} for caption discovery: {query}')
+        run = await Actor.call(GOOGLE_SEARCH_ACTOR, run_input=google_input)
+
+        dataset_id = get_dataset_id(run)
+        if dataset_id is None:
+            Actor.log.warning('Google discovery returned no dataset; continuing with hashtags only.')
+            return urls
+
+        seen: set[str] = set()
+        dataset = await Actor.open_dataset(id=dataset_id)
+        async for item in dataset.iterate_items():
+            for result in (item.get('organicResults') or []):
+                canonical = canonical_post_url(result.get('url', ''))
+                if canonical and canonical not in seen:
+                    seen.add(canonical)
+                    urls.append(canonical)
+                    if len(urls) >= limit:
+                        break
+            if len(urls) >= limit:
+                break
+        Actor.log.info(f'Google discovery found {len(urls)} Instagram post URLs.')
+    except Exception as exc:  # noqa: BLE001 - discovery is best-effort by design
+        Actor.log.warning(f'Google discovery failed ({exc}); continuing with hashtags only.')
+    return urls
+
+
 async def main() -> None:
     """Define the main entry point for the Apify Actor."""
     async with Actor:
@@ -105,23 +180,30 @@ async def main() -> None:
             raise ValueError('Input "maxPosts" must be a positive integer.')
 
         hashtags = keyword_to_hashtags(keyword)
-        if not hashtags:
+
+        Actor.log.info(f'Searching Instagram captions for keyword "{keyword}" (up to {max_posts} posts)...')
+
+        # --- Discovery: Google (caption index) + hashtags ----------------------------
+        # Pull a few times more URLs than requested so the caption filter still has
+        # enough to reach max_posts.
+        google_urls = await discover_post_urls_via_google(keyword, limit=min(max(max_posts * 3, 30), 100))
+
+        per_source_limit = min(max(max_posts * 3, 30), 1000)
+        hashtag_urls = [f'https://www.instagram.com/explore/tags/{tag}/' for tag in hashtags]
+
+        direct_urls = google_urls + hashtag_urls
+        if not direct_urls:
             raise ValueError(
-                f'Keyword "{keyword}" has no letters or digits to build a hashtag from.'
+                f'Could not build any search source from keyword "{keyword}". '
+                'It needs at least one letter or digit.'
             )
 
-        # Scrape more candidates per hashtag than requested, because the caption
-        # filter drops the posts that only used the hashtag without the phrase.
-        per_source_limit = min(max(max_posts * 3, 30), 1000)
-        direct_urls = [f'https://www.instagram.com/explore/tags/{tag}/' for tag in hashtags]
-
         Actor.log.info(
-            f'Searching Instagram captions for keyword "{keyword}" '
-            f'(hashtag seeds: {", ".join("#" + t for t in hashtags)}; '
-            f'up to {max_posts} matching posts)...'
+            f'Scraping captions from {len(google_urls)} Google-found posts '
+            f'and {len(hashtag_urls)} hashtag pages ({", ".join("#" + t for t in hashtags) or "none"})...'
         )
 
-        # --- Run the Instagram scraper -----------------------------------------------
+        # --- Single Instagram scrape for accurate captions ---------------------------
         scraper_input = {
             'directUrls': direct_urls,
             'resultsType': 'posts',
@@ -130,10 +212,6 @@ async def main() -> None:
             'addParentData': False,
         }
 
-        Actor.log.info(
-            f'Calling {INSTAGRAM_SCRAPER_ACTOR} to fetch up to '
-            f'{per_source_limit} candidate posts per hashtag ({len(direct_urls)} hashtags)...'
-        )
         run = await Actor.call(INSTAGRAM_SCRAPER_ACTOR, run_input=scraper_input)
 
         dataset_id = get_dataset_id(run)
@@ -144,8 +222,8 @@ async def main() -> None:
             )
 
         # --- Filter candidates by caption substring ----------------------------------
-        # We match purely on the caption text. The same post can appear under more
-        # than one hashtag seed, so we de-duplicate by its Instagram id/shortCode.
+        # We match purely on the caption text and de-duplicate posts (the same post
+        # can arrive from both Google and a hashtag page).
         candidate_dataset = await Actor.open_dataset(id=dataset_id)
 
         matched = 0
@@ -171,6 +249,6 @@ async def main() -> None:
 
         if matched == 0:
             Actor.log.warning(
-                'No posts matched. Try a more common keyword, or note that the '
-                'hashtag may have too few public posts.'
+                'No posts matched. Try a more common keyword - the phrase may be rare '
+                'in public captions, or not indexed by Google.'
             )
