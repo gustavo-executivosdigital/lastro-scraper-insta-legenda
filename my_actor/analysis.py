@@ -22,6 +22,10 @@ import httpx
 GROQ_URL = 'https://api.groq.com/openai/v1/chat/completions'
 DEFAULT_MODEL = 'llama-3.3-70b-versatile'
 
+# If the chosen model returns 404 (decommissioned / not available to the key), we
+# transparently fall back to the next one so the analysis keeps working.
+FALLBACK_MODELS = ['llama-3.3-70b-versatile', 'llama-3.1-8b-instant', 'openai/gpt-oss-20b']
+
 
 def _safe_json(text: str) -> dict:
     """Parse a JSON object from a model reply, tolerating extra prose around it."""
@@ -55,25 +59,35 @@ async def groq_chat(
     system_prompt: str,
     user_prompt: str,
 ) -> str:
-    """Call Groq chat completions in JSON mode and return the raw message content."""
-    payload = {
-        'model': model,
-        'messages': [
-            {'role': 'system', 'content': system_prompt},
-            {'role': 'user', 'content': user_prompt},
-        ],
-        'temperature': 0.2,
-        'response_format': {'type': 'json_object'},
-    }
-    response = await client.post(
-        GROQ_URL,
-        headers={'Authorization': f'Bearer {api_key}', 'Content-Type': 'application/json'},
-        json=payload,
-        timeout=60.0,
+    """Call Groq chat completions in JSON mode and return the raw message content.
+
+    Tries the requested model first, then the fallback chain on a 404 (model not
+    found / unavailable), so a decommissioned model name never breaks the run.
+    """
+    models_to_try = [model] + [m for m in FALLBACK_MODELS if m != model]
+    headers = {'Authorization': f'Bearer {api_key}', 'Content-Type': 'application/json'}
+
+    for candidate in models_to_try:
+        payload = {
+            'model': candidate,
+            'messages': [
+                {'role': 'system', 'content': system_prompt},
+                {'role': 'user', 'content': user_prompt},
+            ],
+            'temperature': 0.2,
+            'response_format': {'type': 'json_object'},
+        }
+        response = await client.post(GROQ_URL, headers=headers, json=payload, timeout=60.0)
+        if response.status_code == 404:
+            # Model unavailable for this key — try the next one.
+            continue
+        response.raise_for_status()
+        return response.json()['choices'][0]['message']['content']
+
+    raise RuntimeError(
+        f'Nenhum modelo Groq disponível entre {models_to_try} (todos retornaram 404). '
+        'Verifique o nome do modelo ou a permissão da sua chave.'
     )
-    response.raise_for_status()
-    data = response.json()
-    return data['choices'][0]['message']['content']
 
 
 async def classify_polemic(client: httpx.AsyncClient, api_key: str, model: str, caption: str) -> dict:

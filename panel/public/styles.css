@@ -176,6 +176,8 @@ input:focus, select:focus {
   transition: color 0.15s, border-color 0.15s;
 }
 .demo-btn:hover { color: var(--text); border-color: var(--accent); }
+.secondary-row { display: flex; gap: 8px; }
+.secondary-row .demo-btn { margin-top: 10px; flex: 1; }
 
 .status { font-size: 12px; margin-top: 12px; min-height: 16px; text-align: center; }
 .status.error { color: var(--red); }

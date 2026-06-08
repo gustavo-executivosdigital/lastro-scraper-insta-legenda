@@ -142,6 +142,25 @@ demoBtn.addEventListener('click', async () => {
   }
 });
 
+const testGroqBtn = document.getElementById('test-groq-btn');
+testGroqBtn.addEventListener('click', async () => {
+  setStatus('Testando conexão com o Groq…', '');
+  try {
+    // Send the key typed in the panel (if any); server falls back to .env.
+    const typedKey = (new FormData(form).get('groqApiKey') || '').trim();
+    const url = '/api/test-groq' + (typedKey ? `?key=${encodeURIComponent(typedKey)}` : '');
+    const resp = await fetch(url);
+    const json = await resp.json();
+    if (json.ok) {
+      setStatus(`IA OK · modelo ${json.model} respondeu "${(json.reply || '').trim()}"`, 'ok');
+    } else {
+      setStatus(`IA falhou${json.status ? ' (' + json.status + ')' : ''}: ${json.error || 'erro'}`, 'error');
+    }
+  } catch (err) {
+    setStatus(err.message, 'error');
+  }
+});
+
 form.addEventListener('submit', async (e) => {
   e.preventDefault();
   const data = Object.fromEntries(new FormData(form).entries());

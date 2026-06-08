@@ -56,6 +56,35 @@ app.get(['/painel', '/panel'], (_req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'index.html'));
 });
 
+// Live Groq check so the user can verify the AI integration from the panel.
+app.get('/api/test-groq', async (req, res) => {
+  const key = (req.query.key || '').trim() || GROQ_API_KEY;
+  const model = 'llama-3.3-70b-versatile';
+  if (!key) {
+    return res.json({ ok: false, error: 'GROQ_API_KEY não definida no .env (nem informada no painel).' });
+  }
+  try {
+    const r = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${key}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        model,
+        messages: [{ role: 'user', content: 'Responda apenas: OK' }],
+        max_tokens: 5,
+        temperature: 0,
+      }),
+    });
+    const text = await r.text();
+    if (!r.ok) {
+      return res.json({ ok: false, status: r.status, model, error: text.slice(0, 400) });
+    }
+    const reply = JSON.parse(text).choices?.[0]?.message?.content ?? '';
+    res.json({ ok: true, model, reply });
+  } catch (err) {
+    res.json({ ok: false, error: err.message });
+  }
+});
+
 app.get('/api/health', (_req, res) => {
   res.json({
     ok: Boolean(APIFY_TOKEN),
