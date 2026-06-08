@@ -51,6 +51,11 @@ function buildInput(body = {}) {
   return input;
 }
 
+// Friendly aliases so /painel and /panel also open the UI.
+app.get(['/painel', '/panel'], (_req, res) => {
+  res.sendFile(path.join(__dirname, 'public', 'index.html'));
+});
+
 app.get('/api/health', (_req, res) => {
   res.json({
     ok: Boolean(APIFY_TOKEN),
