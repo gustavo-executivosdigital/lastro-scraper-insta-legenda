@@ -1,0 +1,19 @@
+{
+    "$schema": "https://apify.com/schemas/v1/actor.ide.json",
+    "actorSpecification": 1,
+    "name": "instagram-caption-keyword-search",
+    "title": "Instagram Caption Keyword Search",
+    "description": "Searches Instagram posts and returns the ones whose caption contains a given keyword (e.g. 'stanley' or 'very happy').",
+    "version": "0.1",
+    "buildTag": "latest",
+    "meta": {
+        "templateId": "python-crawlee-beautifulsoup",
+        "generatedBy": "Claude Code with Claude Opus 4.8"
+    },
+    "input": "./input_schema.json",
+    "output": "./output_schema.json",
+    "storages": {
+        "dataset": "./dataset_schema.json"
+    },
+    "dockerfile": "../Dockerfile"
+}

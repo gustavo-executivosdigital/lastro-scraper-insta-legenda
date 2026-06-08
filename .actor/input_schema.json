@@ -1,0 +1,24 @@
+{
+    "$schema": "https://apify.com/schemas/v1/input.ide.json",
+    "title": "Instagram Caption Keyword Search",
+    "type": "object",
+    "schemaVersion": 1,
+    "properties": {
+        "keyword": {
+            "title": "Keyword",
+            "type": "string",
+            "description": "The word or phrase to search for inside Instagram post captions. Examples: \"stanley\", \"very happy\". The keyword is also used (with spaces and punctuation removed) as a hashtag to find candidate posts.",
+            "editor": "textfield",
+            "prefill": "stanley"
+        },
+        "maxPosts": {
+            "title": "Max matching posts",
+            "type": "integer",
+            "description": "Maximum number of matching posts to return. The Actor scrapes more candidates than this and keeps only those whose caption contains the keyword.",
+            "default": 50,
+            "minimum": 1,
+            "maximum": 1000
+        }
+    },
+    "required": ["keyword"]
+}

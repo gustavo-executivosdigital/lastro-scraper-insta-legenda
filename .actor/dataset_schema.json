@@ -1,0 +1,64 @@
+{
+    "$schema": "https://apify.com/schemas/v1/dataset.ide.json",
+    "actorSpecification": 1,
+    "fields": {},
+    "views": {
+        "overview": {
+            "title": "Overview",
+            "transformation": {
+                "fields": [
+                    "displayUrl",
+                    "caption",
+                    "ownerUsername",
+                    "likesCount",
+                    "commentsCount",
+                    "timestamp",
+                    "type",
+                    "url",
+                    "keyword"
+                ]
+            },
+            "display": {
+                "component": "table",
+                "properties": {
+                    "displayUrl": {
+                        "label": "Image",
+                        "format": "image"
+                    },
+                    "caption": {
+                        "label": "Caption",
+                        "format": "text"
+                    },
+                    "ownerUsername": {
+                        "label": "Author",
+                        "format": "text"
+                    },
+                    "likesCount": {
+                        "label": "Likes",
+                        "format": "number"
+                    },
+                    "commentsCount": {
+                        "label": "Comments",
+                        "format": "number"
+                    },
+                    "timestamp": {
+                        "label": "Posted",
+                        "format": "date"
+                    },
+                    "type": {
+                        "label": "Type",
+                        "format": "text"
+                    },
+                    "url": {
+                        "label": "Post URL",
+                        "format": "link"
+                    },
+                    "keyword": {
+                        "label": "Keyword",
+                        "format": "text"
+                    }
+                }
+            }
+        }
+    }
+}
