@@ -162,6 +162,21 @@ input:focus, select:focus {
 }
 @keyframes spin { to { transform: rotate(360deg); } }
 
+.demo-btn {
+  width: 100%;
+  margin-top: 10px;
+  padding: 11px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: transparent;
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: color 0.15s, border-color 0.15s;
+}
+.demo-btn:hover { color: var(--text); border-color: var(--accent); }
+
 .status { font-size: 12px; margin-top: 12px; min-height: 16px; text-align: center; }
 .status.error { color: var(--red); }
 .status.ok { color: var(--green); }

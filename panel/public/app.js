@@ -120,6 +120,22 @@ function render(items) {
   resultsEl.innerHTML = items.map(cardHtml).join('');
 }
 
+const demoBtn = document.getElementById('demo-btn');
+demoBtn.addEventListener('click', async () => {
+  setStatus('Carregando demonstração…', '');
+  countBadge.hidden = true;
+  try {
+    const resp = await fetch('/api/demo');
+    const json = await resp.json();
+    render(json.items || []);
+    countBadge.textContent = `${json.count} posts (demo)`;
+    countBadge.hidden = false;
+    setStatus('Demonstração com dados de exemplo (inclui análise de IA).', 'ok');
+  } catch (err) {
+    setStatus(err.message, 'error');
+  }
+});
+
 form.addEventListener('submit', async (e) => {
   e.preventDefault();
   const data = Object.fromEntries(new FormData(form).entries());

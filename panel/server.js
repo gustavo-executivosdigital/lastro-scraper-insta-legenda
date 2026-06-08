@@ -59,6 +59,89 @@ app.get('/api/health', (_req, res) => {
   });
 });
 
+/** Sample dataset so the UI (including the AI block) can be previewed without a token. */
+app.get('/api/demo', (_req, res) => {
+  const items = [
+    {
+      keyword: 'reforma',
+      url: 'https://www.instagram.com/p/CdemoAAAAA1/',
+      caption:
+        'A nova reforma proposta pela prefeitura está gerando muita discussão no bairro. ' +
+        'Uns acham que vai melhorar o trânsito, outros dizem que é só desperdício de dinheiro público. E você?',
+      ownerUsername: 'jornal.dobairro',
+      ownerFullName: 'Jornal do Bairro',
+      likesCount: 4820,
+      commentsCount: 367,
+      timestamp: '2026-05-28T14:12:00.000Z',
+      type: 'Image',
+      displayUrl: 'https://images.unsplash.com/photo-1517048676732-d65bc937f952?w=600&q=80',
+      locationName: 'Leblon, Rio de Janeiro',
+      locationId: '213385402',
+      isPolemic: true,
+      negativePct: 62,
+      positivePct: 23,
+      analysis: {
+        isPolemic: true,
+        reason: 'Trata de obra pública municipal, tema de forte divergência política local.',
+        commentsAnalyzed: 30,
+        positivePct: 23,
+        negativePct: 62,
+        neutralPct: 15,
+        problem: 'Desconfiança sobre o uso do dinheiro público e o real benefício da obra.',
+        summary: 'A maioria dos comentários critica o custo e duvida da utilidade; uma minoria apoia a melhoria do trânsito.',
+      },
+    },
+    {
+      keyword: 'reforma',
+      url: 'https://www.instagram.com/p/CdemoBBBBB2/',
+      caption: 'Reforma da cozinha finalmente pronta! Muito feliz com o resultado 🥰 #reforma #casanova',
+      ownerUsername: 'casa.da.ana',
+      ownerFullName: 'Ana Designs',
+      likesCount: 980,
+      commentsCount: 41,
+      timestamp: '2026-06-01T09:30:00.000Z',
+      type: 'Sidecar',
+      displayUrl: 'https://images.unsplash.com/photo-1556909212-d5b604d0c90d?w=600&q=80',
+      locationName: null,
+      locationId: null,
+      isPolemic: false,
+      analysis: {
+        isPolemic: false,
+        reason: 'Conteúdo pessoal sobre reforma doméstica, sem cunho político.',
+      },
+    },
+    {
+      keyword: 'reforma',
+      url: 'https://www.instagram.com/p/CdemoCCCCC3/',
+      caption:
+        'Reforma trabalhista volta ao debate no congresso. Categorias se mobilizam contra mudanças nas regras de jornada.',
+      ownerUsername: 'politica.agora',
+      ownerFullName: 'Política Agora',
+      likesCount: 12750,
+      commentsCount: 1894,
+      timestamp: '2026-06-05T18:45:00.000Z',
+      type: 'Video',
+      displayUrl: 'https://images.unsplash.com/photo-1591189863430-ab87e120f312?w=600&q=80',
+      locationName: 'Brasília, Distrito Federal',
+      locationId: '212999109',
+      isPolemic: true,
+      negativePct: 71,
+      positivePct: 18,
+      analysis: {
+        isPolemic: true,
+        reason: 'Tema nacional de legislação trabalhista, alvo de intensa polarização.',
+        commentsAnalyzed: 30,
+        positivePct: 18,
+        negativePct: 71,
+        neutralPct: 11,
+        problem: 'Medo de perda de direitos e aumento da jornada sem contrapartida.',
+        summary: 'Predomina a rejeição, com forte temor sobre direitos; apoio minoritário cita modernização.',
+      },
+    },
+  ];
+  res.json({ runId: 'DEMO', status: 'SUCCEEDED', datasetId: 'demo', count: items.length, items });
+});
+
 app.post('/api/run', async (req, res) => {
   if (!APIFY_TOKEN) {
     return res.status(500).json({ error: 'APIFY_TOKEN ausente. Crie um arquivo .env (veja .env.example).' });
