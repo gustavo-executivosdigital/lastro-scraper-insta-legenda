@@ -23,6 +23,7 @@ from __future__ import annotations
 
 import asyncio
 import re
+import unicodedata
 from datetime import date, datetime, timedelta, timezone
 
 from apify import Actor, Event
@@ -77,6 +78,30 @@ def caption_contains(caption: str | None, keyword: str) -> bool:
     if not caption:
         return False
     return keyword.lower() in caption.lower()
+
+
+def normalize_text(value: object) -> str:
+    """Lowercase and strip accents/diacritics for forgiving text matching.
+
+    "Jardim Botânico" and "jardim botanico" become the same string, so a location
+    typed without accents still matches.
+    """
+    if not value:
+        return ''
+    decomposed = unicodedata.normalize('NFKD', str(value))
+    without_accents = ''.join(ch for ch in decomposed if not unicodedata.combining(ch))
+    return without_accents.casefold().strip()
+
+
+def matches_location(caption: object, location_name: object, location: str) -> bool:
+    """Smart location match: the place may be in the post's location tag OR caption.
+
+    Matching is accent- and case-insensitive. An empty ``location`` means no filter.
+    """
+    needle = normalize_text(location)
+    if not needle:
+        return True
+    return needle in normalize_text(location_name) or needle in normalize_text(caption)
 
 
 def coerce_count(value: object) -> int:
@@ -153,6 +178,8 @@ def clean_post(item: dict, keyword: str) -> dict:
         'timestamp': item.get('timestamp'),
         'type': item.get('type'),
         'displayUrl': item.get('displayUrl'),
+        'locationName': item.get('locationName'),
+        'locationId': item.get('locationId'),
         'hashtags': item.get('hashtags'),
         'mentions': item.get('mentions'),
         'shortCode': item.get('shortCode'),
@@ -244,6 +271,7 @@ async def main() -> None:
         min_comments = coerce_count(actor_input.get('minComments'))
         posted_after = parse_date_input(actor_input.get('postedAfter'))
         posted_before = parse_date_input(actor_input.get('postedBefore'))
+        location = (actor_input.get('location') or '').strip()
 
         if not keyword:
             raise ValueError('Input "keyword" is required, e.g. "stanley" or "very happy".')
@@ -258,6 +286,8 @@ async def main() -> None:
             Actor.log.info(
                 f'Date filter: from {posted_after or "any"} to {posted_before or "any"}.'
             )
+        if location:
+            Actor.log.info(f'Location filter: "{location}" (matched in the post location tag or caption).')
 
         hashtags = keyword_to_hashtags(keyword)
 
@@ -311,6 +341,7 @@ async def main() -> None:
         scanned = 0
         dropped_engagement = 0
         dropped_date = 0
+        dropped_location = 0
         seen: set[str] = set()
         matches: list[dict] = []
         async for item in candidate_dataset.iterate_items():
@@ -323,6 +354,11 @@ async def main() -> None:
             seen.add(post_key)
 
             post = clean_post(item, keyword)
+
+            # Location filter (place tagged on the post OR mentioned in the caption).
+            if not matches_location(post['caption'], post['locationName'], location):
+                dropped_location += 1
+                continue
 
             # Date range filter (uses the post's real publish date).
             if posted_after or posted_before:
@@ -345,13 +381,13 @@ async def main() -> None:
 
         Actor.log.info(
             f'Done. Scanned {scanned} candidate posts; {len(matches)} passed all filters '
-            f'({dropped_date} dropped by date range, {dropped_engagement} by low likes/comments); '
-            f'stored {len(ordered)} sorted by "{sort_by}".'
+            f'({dropped_location} dropped by location, {dropped_date} by date range, '
+            f'{dropped_engagement} by low likes/comments); stored {len(ordered)} sorted by "{sort_by}".'
         )
 
         if not ordered:
             Actor.log.warning(
-                'No posts matched. Try a more common keyword, widen the date range, or '
-                'lower the minimum likes/comments - the phrase may be rare in public '
-                'captions, or not indexed by Google.'
+                'No posts matched. Try a more common keyword, broaden the location, widen '
+                'the date range, or lower the minimum likes/comments - the phrase may be '
+                'rare in public captions, or not indexed by Google.'
             )

@@ -43,8 +43,9 @@ Because it calls the underlying scraper, that run consumes its own Apify usage i
 | `minComments` | integer | Only keep posts with at least this many comments (default `0`). |
 | `postedAfter` | string | Only posts on/after this date. Absolute (`2024-01-31`) or relative (`7 days`, `1 month`). Empty = no lower bound. |
 | `postedBefore` | string | Only posts on/before this date. Absolute (`2024-12-31`) or relative (`7 days`). Empty = no upper bound. |
+| `location` | string | Only posts tied to this place (e.g. `Leblon`). Matches the post's location tag **or** a mention in the caption. Accent- and case-insensitive. Empty = no filter. |
 
-Filters are applied **after** the caption match: posts must contain the keyword **and** fall inside the date range **and** meet the minimum likes/comments, and are then sorted by date before the `maxPosts` cap is applied. Posts with hidden like/comment counts are treated as `0`; posts with an unknown date are excluded when a date range is set.
+Filters are applied **after** the caption match: posts must contain the keyword **and** match the location **and** fall inside the date range **and** meet the minimum likes/comments, and are then sorted by date before the `maxPosts` cap is applied. Posts with hidden like/comment counts are treated as `0`; posts with an unknown date are excluded when a date range is set.
 
 Example input:
 
@@ -55,7 +56,8 @@ Example input:
     "sortBy": "newest",
     "minLikes": 100,
     "minComments": 5,
-    "postedAfter": "30 days"
+    "postedAfter": "30 days",
+    "location": "Leblon"
 }
 ```
 
@@ -75,6 +77,8 @@ Each item in the dataset is one matching post. You can download the dataset in v
     "timestamp": "2026-05-30T12:00:00.000Z",
     "type": "Image",
     "displayUrl": "https://instagram.com/.../image.jpg",
+    "locationName": "Leblon, Rio de Janeiro",
+    "locationId": "213385402",
     "hashtags": ["veryhappy"],
     "mentions": [],
     "shortCode": "Cxxxxxxxxxx",
@@ -94,6 +98,7 @@ Each item in the dataset is one matching post. You can download the dataset in v
 | `timestamp` | When the post was published. |
 | `type` | Post type (Image, Video, Sidecar). |
 | `displayUrl` | URL of the post's main image. |
+| `locationName` / `locationId` | The place tagged on the post (if any). |
 | `hashtags` / `mentions` | Hashtags and @mentions found in the post. |
 | `shortCode` / `id` | Instagram identifiers for the post. |
 

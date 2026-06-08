@@ -10,6 +10,7 @@
                     "displayUrl",
                     "caption",
                     "ownerUsername",
+                    "locationName",
                     "likesCount",
                     "commentsCount",
                     "timestamp",
@@ -31,6 +32,10 @@
                     },
                     "ownerUsername": {
                         "label": "Author",
+                        "format": "text"
+                    },
+                    "locationName": {
+                        "label": "Location",
                         "format": "text"
                     },
                     "likesCount": {
