@@ -18,6 +18,31 @@
             "default": 50,
             "minimum": 1,
             "maximum": 1000
+        },
+        "sortBy": {
+            "title": "Sort by date",
+            "type": "string",
+            "description": "Order of the returned posts by publish date.",
+            "editor": "select",
+            "default": "newest",
+            "enum": ["newest", "oldest"],
+            "enumTitles": ["Newest first (most recent → oldest)", "Oldest first (oldest → most recent)"]
+        },
+        "minLikes": {
+            "title": "Minimum likes",
+            "type": "integer",
+            "description": "Only keep posts with at least this many likes. Use 0 for no minimum. Posts with hidden like counts are treated as 0.",
+            "default": 0,
+            "minimum": 0,
+            "unit": "likes"
+        },
+        "minComments": {
+            "title": "Minimum comments",
+            "type": "integer",
+            "description": "Only keep posts with at least this many comments. Use 0 for no minimum. Posts with hidden comment counts are treated as 0.",
+            "default": 0,
+            "minimum": 0,
+            "unit": "comments"
         }
     },
     "required": ["keyword"]

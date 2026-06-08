@@ -74,6 +74,31 @@ def caption_contains(caption: str | None, keyword: str) -> bool:
     return keyword.lower() in caption.lower()
 
 
+def coerce_count(value: object) -> int:
+    """Normalize a like/comment count to a non-negative int.
+
+    Instagram sometimes returns ``None`` or ``-1`` when a count is hidden; we treat
+    those as ``0`` so the minimum filters behave predictably.
+    """
+    try:
+        number = int(value)  # type: ignore[arg-type]
+    except (TypeError, ValueError):
+        return 0
+    return number if number > 0 else 0
+
+
+def sort_posts(posts: list[dict], order: str) -> list[dict]:
+    """Sort posts by ``timestamp``. ``order`` is ``newest`` or ``oldest``.
+
+    Posts with a known ISO timestamp are sorted first (ISO 8601 strings sort
+    chronologically as text); posts with an unknown timestamp are appended last.
+    """
+    known = [p for p in posts if p.get('timestamp')]
+    unknown = [p for p in posts if not p.get('timestamp')]
+    known.sort(key=lambda p: p['timestamp'], reverse=(order == 'newest'))
+    return known + unknown
+
+
 def clean_post(item: dict, keyword: str) -> dict:
     """Pick the useful fields from a raw instagram-scraper item for our dataset."""
     return {
@@ -173,11 +198,16 @@ async def main() -> None:
         actor_input = await Actor.get_input() or {}
         keyword = (actor_input.get('keyword') or '').strip()
         max_posts = int(actor_input.get('maxPosts') or 50)
+        sort_by = (actor_input.get('sortBy') or 'newest').strip().lower()
+        min_likes = coerce_count(actor_input.get('minLikes'))
+        min_comments = coerce_count(actor_input.get('minComments'))
 
         if not keyword:
             raise ValueError('Input "keyword" is required, e.g. "stanley" or "very happy".')
         if max_posts <= 0:
             raise ValueError('Input "maxPosts" must be a positive integer.')
+        if sort_by not in ('newest', 'oldest'):
+            raise ValueError('Input "sortBy" must be either "newest" or "oldest".')
 
         hashtags = keyword_to_hashtags(keyword)
 
@@ -221,14 +251,17 @@ async def main() -> None:
                 'Check that the Actor run succeeded and your account has access to it.'
             )
 
-        # --- Filter candidates by caption substring ----------------------------------
-        # We match purely on the caption text and de-duplicate posts (the same post
-        # can arrive from both Google and a hashtag page).
+        # --- Filter candidates, then sort and store ----------------------------------
+        # We match purely on the caption text, apply the engagement minimums, and
+        # de-duplicate posts (the same post can arrive from both Google and a hashtag
+        # page). All matches are collected first so we can sort before applying the
+        # max_posts cap - otherwise the ordering would be wrong.
         candidate_dataset = await Actor.open_dataset(id=dataset_id)
 
-        matched = 0
         scanned = 0
+        dropped_engagement = 0
         seen: set[str] = set()
+        matches: list[dict] = []
         async for item in candidate_dataset.iterate_items():
             scanned += 1
             if not caption_contains(item.get('caption'), keyword):
@@ -237,18 +270,27 @@ async def main() -> None:
             if post_key in seen:
                 continue
             seen.add(post_key)
-            await Actor.push_data(clean_post(item, keyword))
-            matched += 1
-            if matched >= max_posts:
-                break
+
+            post = clean_post(item, keyword)
+            if coerce_count(post['likesCount']) < min_likes or coerce_count(post['commentsCount']) < min_comments:
+                dropped_engagement += 1
+                continue
+            matches.append(post)
+
+        # Sort by date, then keep only the requested number of posts.
+        ordered = sort_posts(matches, sort_by)[:max_posts]
+        for post in ordered:
+            await Actor.push_data(post)
 
         Actor.log.info(
-            f'Done. Scanned {scanned} candidate posts, pushed {matched} whose caption '
-            f'contains "{keyword}".'
+            f'Done. Scanned {scanned} candidate posts; {len(matches)} matched the caption '
+            f'and engagement filters ({dropped_engagement} dropped for low likes/comments); '
+            f'stored {len(ordered)} sorted by "{sort_by}".'
         )
 
-        if matched == 0:
+        if not ordered:
             Actor.log.warning(
-                'No posts matched. Try a more common keyword - the phrase may be rare '
-                'in public captions, or not indexed by Google.'
+                'No posts matched. Try a more common keyword or lower the minimum '
+                'likes/comments - the phrase may be rare in public captions, or not '
+                'indexed by Google.'
             )

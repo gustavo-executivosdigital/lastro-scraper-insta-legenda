@@ -38,13 +38,21 @@ Because it calls the underlying scraper, that run consumes its own Apify usage i
 | --- | --- | --- |
 | `keyword` | string (required) | The word or phrase to look for in captions, e.g. `stanley` or `very happy`. |
 | `maxPosts` | integer | Maximum number of matching posts to return (default `50`, max `1000`). |
+| `sortBy` | string | Order of results by publish date: `newest` (default) or `oldest`. |
+| `minLikes` | integer | Only keep posts with at least this many likes (default `0`). |
+| `minComments` | integer | Only keep posts with at least this many comments (default `0`). |
+
+Filters are applied **after** the caption match: posts must contain the keyword **and** meet the minimum likes/comments, and are then sorted by date before the `maxPosts` cap is applied. Posts with hidden like/comment counts are treated as `0`.
 
 Example input:
 
 ```json
 {
     "keyword": "very happy",
-    "maxPosts": 50
+    "maxPosts": 50,
+    "sortBy": "newest",
+    "minLikes": 100,
+    "minComments": 5
 }
 ```
 
