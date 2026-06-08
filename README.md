@@ -21,11 +21,13 @@ This Actor runs on the [Apify platform](https://apify.com), so you get API acces
 
 ## How it works
 
-Instagram has no public full-text caption search, so this Actor composes Apify's well-maintained [`apify/instagram-scraper`](https://apify.com/apify/instagram-scraper):
+Instagram has no public full-text caption search — the only public way to discover posts is through hashtags. So this Actor composes Apify's well-maintained [`apify/instagram-scraper`](https://apify.com/apify/instagram-scraper) to gather candidates, then matches purely on the **caption text**:
 
-1. Your keyword is turned into a hashtag seed (`very happy` → `#veryhappy`) to gather a pool of likely-relevant posts.
-2. `apify/instagram-scraper` scrapes those candidate posts.
-3. The Actor keeps only the posts whose **caption actually contains your keyword** (case-insensitive substring match) and saves them to the dataset.
+1. Your keyword is turned into several hashtag seeds to cast a wide net: the whole phrase (`very happy` → `#veryhappy`) **and each individual word** (`#very`, `#happy`).
+2. `apify/instagram-scraper` scrapes candidate posts from all of those hashtags.
+3. The Actor keeps only the posts whose **caption actually contains your keyword** (case-insensitive substring match), de-duplicates them, and saves them to the dataset.
+
+This means a post that writes "very happy" in its caption is captured **even if it never used the `#veryhappy` hashtag**, as long as it can be reached through one of the seed hashtags.
 
 Because it calls the underlying scraper, that run consumes its own Apify usage in addition to this Actor's compute.
 
@@ -90,7 +92,7 @@ Most of the cost comes from the underlying `apify/instagram-scraper` run, which 
 ## Tips & advanced options
 
 - **Short, common keywords** (like `stanley`) return more matches than rare phrases.
-- The keyword's letters and digits become the hashtag seed, so `very happy` searches the `#veryhappy` hashtag but still filters captions by the exact phrase `very happy`.
+- Multi-word keywords are searched across several hashtags (the combined phrase plus each word), but results are always filtered by the exact phrase in the caption text.
 - Lower `maxPosts` for faster, cheaper runs; raise it for broader coverage.
 - Schedule the Actor (Schedules tab) to monitor a keyword over time.
 

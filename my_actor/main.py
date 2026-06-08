@@ -23,13 +23,28 @@ from apify import Actor, Event
 INSTAGRAM_SCRAPER_ACTOR = 'apify/instagram-scraper'
 
 
-def keyword_to_hashtag(keyword: str) -> str:
-    """Turn a free-text keyword into a single Instagram hashtag seed.
+def keyword_to_hashtags(keyword: str) -> list[str]:
+    """Build hashtag seeds from a keyword to gather candidate posts.
 
-    Instagram hashtags cannot contain spaces or punctuation, so we strip everything
-    that is not a letter or a digit. ``very happy`` -> ``veryhappy``.
+    Instagram offers no caption full-text search, so the only public way to
+    discover posts is through hashtags. We then filter those candidates by their
+    real caption text. To avoid missing posts that mention the phrase in the
+    caption without using the exact combined hashtag, we seed with:
+
+      - the whole keyword as one hashtag (``very happy`` -> ``veryhappy``)
+      - each individual word as its own hashtag (``very``, ``happy``)
+
+    This widens the candidate pool; the caption filter then does the real matching.
     """
-    return re.sub(r'[^0-9a-z]', '', keyword.lower())
+    seeds: list[str] = []
+    combined = re.sub(r'[^0-9a-z]', '', keyword.lower())
+    if combined:
+        seeds.append(combined)
+    for word in re.split(r'\s+', keyword.lower().strip()):
+        tag = re.sub(r'[^0-9a-z]', '', word)
+        if tag and tag not in seeds:
+            seeds.append(tag)
+    return seeds
 
 
 def caption_contains(caption: str | None, keyword: str) -> bool:
@@ -89,30 +104,36 @@ async def main() -> None:
         if max_posts <= 0:
             raise ValueError('Input "maxPosts" must be a positive integer.')
 
-        hashtag = keyword_to_hashtag(keyword)
-        if not hashtag:
+        hashtags = keyword_to_hashtags(keyword)
+        if not hashtags:
             raise ValueError(
                 f'Keyword "{keyword}" has no letters or digits to build a hashtag from.'
             )
 
-        # Scrape more candidates than requested, because the caption filter drops some.
-        candidate_limit = min(max(max_posts * 3, 30), 1000)
+        # Scrape more candidates per hashtag than requested, because the caption
+        # filter drops the posts that only used the hashtag without the phrase.
+        per_source_limit = min(max(max_posts * 3, 30), 1000)
+        direct_urls = [f'https://www.instagram.com/explore/tags/{tag}/' for tag in hashtags]
 
         Actor.log.info(
-            f'Searching Instagram for keyword "{keyword}" '
-            f'(hashtag seed #{hashtag}, up to {max_posts} matching posts)...'
+            f'Searching Instagram captions for keyword "{keyword}" '
+            f'(hashtag seeds: {", ".join("#" + t for t in hashtags)}; '
+            f'up to {max_posts} matching posts)...'
         )
 
         # --- Run the Instagram scraper -----------------------------------------------
         scraper_input = {
-            'directUrls': [f'https://www.instagram.com/explore/tags/{hashtag}/'],
+            'directUrls': direct_urls,
             'resultsType': 'posts',
-            'resultsLimit': candidate_limit,
+            'resultsLimit': per_source_limit,
             'searchLimit': 1,
             'addParentData': False,
         }
 
-        Actor.log.info(f'Calling {INSTAGRAM_SCRAPER_ACTOR} to fetch up to {candidate_limit} candidate posts...')
+        Actor.log.info(
+            f'Calling {INSTAGRAM_SCRAPER_ACTOR} to fetch up to '
+            f'{per_source_limit} candidate posts per hashtag ({len(direct_urls)} hashtags)...'
+        )
         run = await Actor.call(INSTAGRAM_SCRAPER_ACTOR, run_input=scraper_input)
 
         dataset_id = get_dataset_id(run)
@@ -123,20 +144,29 @@ async def main() -> None:
             )
 
         # --- Filter candidates by caption substring ----------------------------------
+        # We match purely on the caption text. The same post can appear under more
+        # than one hashtag seed, so we de-duplicate by its Instagram id/shortCode.
         candidate_dataset = await Actor.open_dataset(id=dataset_id)
 
         matched = 0
         scanned = 0
+        seen: set[str] = set()
         async for item in candidate_dataset.iterate_items():
             scanned += 1
-            if caption_contains(item.get('caption'), keyword):
-                await Actor.push_data(clean_post(item, keyword))
-                matched += 1
-                if matched >= max_posts:
-                    break
+            if not caption_contains(item.get('caption'), keyword):
+                continue
+            post_key = item.get('id') or item.get('shortCode') or item.get('url')
+            if post_key in seen:
+                continue
+            seen.add(post_key)
+            await Actor.push_data(clean_post(item, keyword))
+            matched += 1
+            if matched >= max_posts:
+                break
 
         Actor.log.info(
-            f'Done. Scanned {scanned} candidate posts, pushed {matched} matching the keyword "{keyword}".'
+            f'Done. Scanned {scanned} candidate posts, pushed {matched} whose caption '
+            f'contains "{keyword}".'
         )
 
         if matched == 0:
