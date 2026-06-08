@@ -3,6 +3,10 @@
 .nvim.lua
 storage
 
+# Local web panel (not part of the Actor image)
+panel
+node_modules
+
 # The rest is copied from https://github.com/github/gitignore/blob/main/Python.gitignore
 
 # Byte-compiled / optimized / DLL files

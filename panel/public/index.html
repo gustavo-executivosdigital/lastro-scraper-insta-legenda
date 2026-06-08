@@ -1,0 +1,123 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Lastro · Instagram Caption Scraper</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <div class="layout">
+      <!-- Sidebar form -->
+      <aside class="panel">
+        <header class="brand">
+          <div class="brand-mark">L</div>
+          <div>
+            <h1>Lastro Scraper</h1>
+            <p>Busca por legenda no Instagram</p>
+          </div>
+        </header>
+
+        <form id="run-form" autocomplete="off">
+          <label class="field">
+            <span>Palavra-chave <em>*</em></span>
+            <input type="text" name="keyword" placeholder="ex: stanley, very happy" required />
+          </label>
+
+          <div class="grid-2">
+            <label class="field">
+              <span>Máx. de posts</span>
+              <input type="number" name="maxPosts" value="50" min="1" max="1000" />
+            </label>
+            <label class="field">
+              <span>Ordenar por</span>
+              <select name="sortBy">
+                <option value="newest">Mais recentes</option>
+                <option value="oldest">Mais antigos</option>
+              </select>
+            </label>
+          </div>
+
+          <div class="grid-2">
+            <label class="field">
+              <span>Mín. curtidas</span>
+              <input type="number" name="minLikes" value="0" min="0" />
+            </label>
+            <label class="field">
+              <span>Mín. comentários</span>
+              <input type="number" name="minComments" value="0" min="0" />
+            </label>
+          </div>
+
+          <div class="grid-2">
+            <label class="field">
+              <span>Postado depois de</span>
+              <input type="text" name="postedAfter" placeholder="2024-01-01 ou 30 days" />
+            </label>
+            <label class="field">
+              <span>Postado antes de</span>
+              <input type="text" name="postedBefore" placeholder="2024-12-31 ou 7 days" />
+            </label>
+          </div>
+
+          <label class="field">
+            <span>Localização</span>
+            <input type="text" name="location" placeholder="ex: Leblon, Jardim Botânico" />
+          </label>
+
+          <!-- AI toggle -->
+          <div class="toggle-card">
+            <div class="toggle-head">
+              <div>
+                <strong>Análise política (IA)</strong>
+                <small>Classifica polêmica e analisa o sentimento dos comentários</small>
+              </div>
+              <label class="switch">
+                <input type="checkbox" name="enablePoliticalAnalysis" id="ai-toggle" />
+                <span class="slider"></span>
+              </label>
+            </div>
+
+            <div class="ai-fields" id="ai-fields" hidden>
+              <label class="field">
+                <span>Groq API key</span>
+                <input type="password" name="groqApiKey" placeholder="gsk_... (ou deixe no .env)" />
+              </label>
+              <div class="grid-2">
+                <label class="field">
+                  <span>Modelo Groq</span>
+                  <input type="text" name="groqModel" value="llama-3.3-70b-versatile" />
+                </label>
+                <label class="field">
+                  <span>Máx. comentários</span>
+                  <input type="number" name="maxComments" value="30" min="1" max="500" />
+                </label>
+              </div>
+            </div>
+          </div>
+
+          <button type="submit" class="run-btn" id="run-btn">
+            <span class="btn-label">Rodar scraper</span>
+            <span class="spinner" hidden></span>
+          </button>
+          <p class="status" id="status"></p>
+        </form>
+      </aside>
+
+      <!-- Results -->
+      <main class="results">
+        <div class="results-head">
+          <h2 id="results-title">Resultados</h2>
+          <span class="count-badge" id="count-badge" hidden></span>
+        </div>
+        <div id="results" class="cards"></div>
+        <div id="empty" class="empty">
+          <p>Preencha a busca e clique em <strong>Rodar scraper</strong>.</p>
+        </div>
+      </main>
+    </div>
+
+    <script src="app.js"></script>
+  </body>
+</html>
