@@ -43,6 +43,18 @@
             "default": 0,
             "minimum": 0,
             "unit": "comments"
+        },
+        "postedAfter": {
+            "title": "Posted after (from date)",
+            "type": "string",
+            "description": "Only keep posts published on or after this date. Accepts an absolute date (e.g. 2024-01-31) or a relative value (e.g. \"7 days\", \"2 weeks\", \"1 month\", \"1 year\"). Leave empty for no lower bound.",
+            "editor": "datepicker"
+        },
+        "postedBefore": {
+            "title": "Posted before (to date)",
+            "type": "string",
+            "description": "Only keep posts published on or before this date. Accepts an absolute date (e.g. 2024-12-31) or a relative value (e.g. \"7 days\"). Leave empty for no upper bound.",
+            "editor": "datepicker"
         }
     },
     "required": ["keyword"]

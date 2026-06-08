@@ -23,8 +23,13 @@ from __future__ import annotations
 
 import asyncio
 import re
+from datetime import date, datetime, timedelta, timezone
 
 from apify import Actor, Event
+
+# Relative date inputs like "7 days", "2 weeks", "1 month", "1 year".
+RELATIVE_DATE_RE = re.compile(r'^\s*(\d+)\s*(day|week|month|year)s?\s*$', re.IGNORECASE)
+_RELATIVE_UNIT_DAYS = {'day': 1, 'week': 7, 'month': 30, 'year': 365}
 
 # Public Apify Store Actors we compose.
 INSTAGRAM_SCRAPER_ACTOR = 'apify/instagram-scraper'
@@ -85,6 +90,42 @@ def coerce_count(value: object) -> int:
     except (TypeError, ValueError):
         return 0
     return number if number > 0 else 0
+
+
+def parse_date_input(value: object) -> date | None:
+    """Parse a user date bound into a ``date``.
+
+    Accepts an absolute ISO date/datetime (``2024-01-31`` or ``2024-01-31T..``) or a
+    relative form (``7 days``, ``2 weeks``, ``1 month``, ``1 year``) counted back from
+    today (UTC). Returns ``None`` when the value is empty or unparseable.
+    """
+    if value is None:
+        return None
+    text = str(value).strip()
+    if not text:
+        return None
+
+    match = RELATIVE_DATE_RE.match(text)
+    if match:
+        amount = int(match.group(1))
+        unit = match.group(2).lower()
+        days = _RELATIVE_UNIT_DAYS[unit] * amount
+        return datetime.now(timezone.utc).date() - timedelta(days=days)
+
+    try:
+        return date.fromisoformat(text[:10])
+    except ValueError:
+        return None
+
+
+def post_date(timestamp: object) -> date | None:
+    """Extract the calendar date from a post's ISO ``timestamp`` (``None`` if unknown)."""
+    if not timestamp:
+        return None
+    try:
+        return date.fromisoformat(str(timestamp)[:10])
+    except ValueError:
+        return None
 
 
 def sort_posts(posts: list[dict], order: str) -> list[dict]:
@@ -201,6 +242,8 @@ async def main() -> None:
         sort_by = (actor_input.get('sortBy') or 'newest').strip().lower()
         min_likes = coerce_count(actor_input.get('minLikes'))
         min_comments = coerce_count(actor_input.get('minComments'))
+        posted_after = parse_date_input(actor_input.get('postedAfter'))
+        posted_before = parse_date_input(actor_input.get('postedBefore'))
 
         if not keyword:
             raise ValueError('Input "keyword" is required, e.g. "stanley" or "very happy".')
@@ -208,6 +251,13 @@ async def main() -> None:
             raise ValueError('Input "maxPosts" must be a positive integer.')
         if sort_by not in ('newest', 'oldest'):
             raise ValueError('Input "sortBy" must be either "newest" or "oldest".')
+        if posted_after and posted_before and posted_after > posted_before:
+            raise ValueError('Input "postedAfter" must not be later than "postedBefore".')
+
+        if posted_after or posted_before:
+            Actor.log.info(
+                f'Date filter: from {posted_after or "any"} to {posted_before or "any"}.'
+            )
 
         hashtags = keyword_to_hashtags(keyword)
 
@@ -260,6 +310,7 @@ async def main() -> None:
 
         scanned = 0
         dropped_engagement = 0
+        dropped_date = 0
         seen: set[str] = set()
         matches: list[dict] = []
         async for item in candidate_dataset.iterate_items():
@@ -272,9 +323,19 @@ async def main() -> None:
             seen.add(post_key)
 
             post = clean_post(item, keyword)
+
+            # Date range filter (uses the post's real publish date).
+            if posted_after or posted_before:
+                pd = post_date(post['timestamp'])
+                if pd is None or (posted_after and pd < posted_after) or (posted_before and pd > posted_before):
+                    dropped_date += 1
+                    continue
+
+            # Engagement filter.
             if coerce_count(post['likesCount']) < min_likes or coerce_count(post['commentsCount']) < min_comments:
                 dropped_engagement += 1
                 continue
+
             matches.append(post)
 
         # Sort by date, then keep only the requested number of posts.
@@ -283,14 +344,14 @@ async def main() -> None:
             await Actor.push_data(post)
 
         Actor.log.info(
-            f'Done. Scanned {scanned} candidate posts; {len(matches)} matched the caption '
-            f'and engagement filters ({dropped_engagement} dropped for low likes/comments); '
+            f'Done. Scanned {scanned} candidate posts; {len(matches)} passed all filters '
+            f'({dropped_date} dropped by date range, {dropped_engagement} by low likes/comments); '
             f'stored {len(ordered)} sorted by "{sort_by}".'
         )
 
         if not ordered:
             Actor.log.warning(
-                'No posts matched. Try a more common keyword or lower the minimum '
-                'likes/comments - the phrase may be rare in public captions, or not '
-                'indexed by Google.'
+                'No posts matched. Try a more common keyword, widen the date range, or '
+                'lower the minimum likes/comments - the phrase may be rare in public '
+                'captions, or not indexed by Google.'
             )
