@@ -4,6 +4,25 @@
 
 This Actor runs on the [Apify platform](https://apify.com), so you get API access, scheduling, integrations (Make, Zapier, Google Sheets), proxy rotation, and run monitoring out of the box.
 
+> **This repository contains two things:** the **Apify Actor** (the scraper itself) and a **local web panel** to run it from your browser. See [Repository structure](#repository-structure) and [Local web panel](#local-web-panel).
+
+## Repository structure
+
+```
+.
+├── .actor/            # Apify Actor config (input/output/dataset schemas)
+├── my_actor/          # Actor source code (Python)
+│   ├── main.py        # Orchestration: discovery → filters → sort → output
+│   ├── analysis.py    # Optional Groq AI political-sentiment analysis
+│   └── ...
+├── panel/             # Local web panel (Node + Express) to run the Actor
+│   ├── server.js      # API server (keeps your Apify token server-side)
+│   └── public/        # Browser UI
+├── Dockerfile         # Actor container image
+├── requirements.txt   # Python dependencies
+└── README.md
+```
+
 ## Why use Instagram Caption Keyword Search?
 
 - **Social listening** — track every public post mentioning your brand, product, or campaign phrase.
@@ -127,6 +146,22 @@ This Actor composes two underlying Actors: `apify/google-search-scraper` (one li
 - Use **exact phrases** for precision (`very happy` matches captions containing those words together). Common phrases return more, indexed results.
 - Lower `maxPosts` for faster, cheaper runs; raise it for broader coverage.
 - Schedule the Actor (Schedules tab) to monitor a keyword over time.
+
+## Local web panel
+
+The [`panel/`](./panel) folder is a small **Node + Express** app that runs this Actor from your browser, with a form for every input field and the AI toggle. Your Apify token stays **server-side** in a `.env` file (never exposed to the browser or committed to Git).
+
+```bash
+cd panel
+npm install
+copy .env.example .env      # Windows  ·  cp on macOS/Linux
+# edit .env and set APIFY_TOKEN=apify_api_...
+npm start                   # open http://localhost:3000
+```
+
+It includes a **demo mode** (preview the AI output without a token) and a **"Test AI" button** that verifies the Groq connection live. Full details in [`panel/README.md`](./panel/README.md).
+
+> **Security:** never put real keys in `.env.example` or any tracked file — only in `.env`, which is git-ignored. The repository ships with no secrets.
 
 ## FAQ, disclaimers, and support
 

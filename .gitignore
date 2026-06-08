@@ -2,6 +2,17 @@
 .nvim.lua
 storage
 
+# Node.js (local web panel)
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Secrets / local env (never commit real keys)
+.env
+.env.local
+*.local.env
+
 # The rest is copied from https://github.com/github/gitignore/blob/main/Python.gitignore
 
 # Byte-compiled / optimized / DLL files
