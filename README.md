@@ -44,6 +44,20 @@ Because it calls the underlying scraper, that run consumes its own Apify usage i
 | `postedAfter` | string | Only posts on/after this date. Absolute (`2024-01-31`) or relative (`7 days`, `1 month`). Empty = no lower bound. |
 | `postedBefore` | string | Only posts on/before this date. Absolute (`2024-12-31`) or relative (`7 days`). Empty = no upper bound. |
 | `location` | string | Only posts tied to this place (e.g. `Leblon`). Matches the post's location tag **or** a mention in the caption. Accent- and case-insensitive. Empty = no filter. |
+| `enablePoliticalAnalysis` | boolean | Toggle the AI political-sentiment scanner (default `false`). |
+| `groqApiKey` | string (secret) | Free [Groq](https://console.groq.com) API key — required when the toggle is ON (or set `GROQ_API_KEY`). |
+| `groqModel` | string | Groq chat model (default `llama-3.3-70b-versatile`). |
+| `maxComments` | integer | Most-liked comments to scrape & analyze per polemic post (default `30`). |
+
+### AI political analysis (optional)
+
+When `enablePoliticalAnalysis` is ON, each matching post goes through an extra pipeline powered by [Groq](https://groq.com):
+
+1. **Classify** — the AI reads the caption and decides if it is polemic/political.
+2. **Scrape comments** — for polemic posts, the most-liked comments are scraped (`maxComments`).
+3. **Sentiment** — the AI summarizes those comments into `positivePct`, `negativePct`, `neutralPct`, the core `problem`, and a short `summary`.
+
+The result is attached to each post under an `analysis` object, with `isPolemic`, `negativePct` and `positivePct` also surfaced as top-level columns. This step is best-effort: any AI or comment-scrape failure is logged and skipped without aborting the run.
 
 Filters are applied **after** the caption match: posts must contain the keyword **and** match the location **and** fall inside the date range **and** meet the minimum likes/comments, and are then sorted by date before the `maxPosts` cap is applied. Posts with hidden like/comment counts are treated as `0`; posts with an unknown date are excluded when a date range is set.
 

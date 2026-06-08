@@ -2,3 +2,6 @@
 # https://pip.pypa.io/en/latest/reference/requirements-file-format/
 
 apify >= 3.0.0, < 4.0.0
+# Used for the optional Groq AI political-sentiment analysis (also a transitive
+# dependency of apify, pinned loosely here to keep the import explicit).
+httpx

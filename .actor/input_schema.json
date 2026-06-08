@@ -61,6 +61,37 @@
             "type": "string",
             "description": "Only keep posts tied to this place, e.g. a neighborhood, city, or venue (\"Leblon\", \"Jardim Botânico\"). A post matches if the place appears in its Instagram location tag OR is mentioned in the caption. Accent- and case-insensitive. Leave empty for no location filter.",
             "editor": "textfield"
+        },
+        "enablePoliticalAnalysis": {
+            "title": "Enable AI political analysis",
+            "type": "boolean",
+            "description": "When ON, an AI (Groq) checks whether each post's caption is polemic/political. For polemic posts, it scrapes the most-liked comments and summarizes public sentiment (% positive / negative / neutral) and the core issue. This adds AI calls and an extra comment-scraping step.",
+            "default": false,
+            "groupCaption": "AI political analysis (optional)",
+            "groupDescription": "Turn a caption search into a political-sentiment scanner."
+        },
+        "groqApiKey": {
+            "title": "Groq API key",
+            "type": "string",
+            "description": "Your free Groq API key (https://console.groq.com). Required when 'Enable AI political analysis' is ON. Can also be supplied via the GROQ_API_KEY environment variable.",
+            "editor": "textfield",
+            "isSecret": true
+        },
+        "groqModel": {
+            "title": "Groq model",
+            "type": "string",
+            "description": "Groq chat model used for the analysis.",
+            "editor": "textfield",
+            "default": "llama-3.3-70b-versatile"
+        },
+        "maxComments": {
+            "title": "Max comments per post",
+            "type": "integer",
+            "description": "How many of the most-liked comments to scrape and analyze per polemic post (only used when AI analysis is ON).",
+            "default": 30,
+            "minimum": 1,
+            "maximum": 500,
+            "unit": "comments"
         }
     },
     "required": ["keyword"]

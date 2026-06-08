@@ -22,11 +22,15 @@ the Actor continues with the other instead of aborting the whole run.
 from __future__ import annotations
 
 import asyncio
+import os
 import re
 import unicodedata
 from datetime import date, datetime, timedelta, timezone
 
+import httpx
 from apify import Actor, Event
+
+from .analysis import DEFAULT_MODEL, analyze_sentiment, classify_polemic
 
 # Relative date inputs like "7 days", "2 weeks", "1 month", "1 year".
 RELATIVE_DATE_RE = re.compile(r'^\s*(\d+)\s*(day|week|month|year)s?\s*$', re.IGNORECASE)
@@ -252,6 +256,122 @@ async def discover_post_urls_via_google(keyword: str, limit: int) -> list[str]:
     return urls
 
 
+def comment_post_key(comment: dict) -> str | None:
+    """Best-effort canonical post URL that a scraped comment belongs to."""
+    for field in ('postUrl', 'url'):
+        canonical = canonical_post_url(comment.get(field, '') or '')
+        if canonical:
+            return canonical
+    short_code = comment.get('postShortCode') or comment.get('postShortcode')
+    if short_code:
+        return f'https://www.instagram.com/p/{short_code}/'
+    return None
+
+
+async def scrape_comments_for_posts(post_urls: list[str], max_comments: int) -> dict[str, list[dict]]:
+    """Scrape comments for the given post URLs and group them by canonical post URL.
+
+    A single ``instagram-scraper`` run (resultsType=comments) handles every URL. When
+    only one post is requested, all returned comments are attributed to it directly,
+    which is both correct and robust.
+    """
+    grouped: dict[str, list[dict]] = {}
+    urls = [u for u in (canonical_post_url(u) or u for u in post_urls) if u]
+    if not urls:
+        return grouped
+
+    comments_input = {
+        'directUrls': urls,
+        'resultsType': 'comments',
+        'resultsLimit': max_comments,
+        'addParentData': True,
+    }
+    Actor.log.info(f'Scraping up to {max_comments} comments for {len(urls)} polemic post(s)...')
+    run = await Actor.call(INSTAGRAM_SCRAPER_ACTOR, run_input=comments_input)
+
+    dataset_id = get_dataset_id(run)
+    if dataset_id is None:
+        Actor.log.warning('Comment scrape returned no dataset; skipping sentiment for these posts.')
+        return grouped
+
+    single_key = canonical_post_url(urls[0]) if len(urls) == 1 else None
+    dataset = await Actor.open_dataset(id=dataset_id)
+    async for comment in dataset.iterate_items():
+        key = single_key or comment_post_key(comment)
+        if key:
+            grouped.setdefault(key, []).append(comment)
+    return grouped
+
+
+async def run_political_analysis(
+    posts: list[dict],
+    *,
+    api_key: str,
+    model: str,
+    max_comments: int,
+) -> None:
+    """Enrich each post in-place with an ``analysis`` object (best-effort).
+
+    Step 1: classify every post's caption as polemic or not.
+    Step 2: scrape comments for the polemic posts (most-liked first).
+    Step 3: ask the AI to summarize the sentiment of those comments.
+    """
+    async with httpx.AsyncClient() as client:
+        # Step 1 - classify captions.
+        polemic: list[dict] = []
+        for post in posts:
+            try:
+                verdict = await classify_polemic(client, api_key, model, post.get('caption') or '')
+            except Exception as exc:  # noqa: BLE001 - analysis is best-effort
+                Actor.log.warning(f'Caption classification failed for {post.get("url")}: {exc}')
+                post['isPolemic'] = None
+                post['analysis'] = {'error': f'classification failed: {exc}'}
+                continue
+            post['isPolemic'] = verdict['isPolemic']
+            post['analysis'] = {'isPolemic': verdict['isPolemic'], 'reason': verdict['reason']}
+            if verdict['isPolemic']:
+                polemic.append(post)
+
+        Actor.log.info(f'AI classified {len(polemic)}/{len(posts)} posts as polemic.')
+        if not polemic:
+            return
+
+        # Step 2 - scrape comments for polemic posts.
+        try:
+            comments_by_post = await scrape_comments_for_posts(
+                [p['url'] for p in polemic if p.get('url')], max_comments
+            )
+        except Exception as exc:  # noqa: BLE001 - degrade gracefully
+            Actor.log.warning(f'Comment scrape failed; sentiment will be skipped: {exc}')
+            comments_by_post = {}
+
+        # Step 3 - sentiment per polemic post.
+        for post in polemic:
+            key = canonical_post_url(post.get('url', '') or '')
+            raw_comments = comments_by_post.get(key, [])
+            # Sort by likes (most-liked first), then keep the requested amount.
+            raw_comments.sort(key=lambda c: coerce_count(c.get('likesCount')), reverse=True)
+            texts = [c.get('text') for c in raw_comments[:max_comments] if c.get('text')]
+
+            if not texts:
+                post['analysis']['commentsAnalyzed'] = 0
+                post['analysis']['note'] = 'No comments available to analyze.'
+                continue
+
+            try:
+                sentiment = await analyze_sentiment(client, api_key, model, post.get('caption') or '', texts)
+            except Exception as exc:  # noqa: BLE001 - best-effort
+                Actor.log.warning(f'Sentiment analysis failed for {post.get("url")}: {exc}')
+                post['analysis']['commentsAnalyzed'] = len(texts)
+                post['analysis']['note'] = f'sentiment failed: {exc}'
+                continue
+
+            post['analysis']['commentsAnalyzed'] = len(texts)
+            post['analysis'].update(sentiment)
+            post['negativePct'] = sentiment['negativePct']
+            post['positivePct'] = sentiment['positivePct']
+
+
 async def main() -> None:
     """Define the main entry point for the Apify Actor."""
     async with Actor:
@@ -272,6 +392,10 @@ async def main() -> None:
         posted_after = parse_date_input(actor_input.get('postedAfter'))
         posted_before = parse_date_input(actor_input.get('postedBefore'))
         location = (actor_input.get('location') or '').strip()
+        enable_analysis = bool(actor_input.get('enablePoliticalAnalysis'))
+        groq_api_key = (actor_input.get('groqApiKey') or os.environ.get('GROQ_API_KEY') or '').strip()
+        groq_model = (actor_input.get('groqModel') or DEFAULT_MODEL).strip()
+        max_comments = int(actor_input.get('maxComments') or 30)
 
         if not keyword:
             raise ValueError('Input "keyword" is required, e.g. "stanley" or "very happy".')
@@ -279,6 +403,8 @@ async def main() -> None:
             raise ValueError('Input "maxPosts" must be a positive integer.')
         if sort_by not in ('newest', 'oldest'):
             raise ValueError('Input "sortBy" must be either "newest" or "oldest".')
+        if max_comments <= 0:
+            raise ValueError('Input "maxComments" must be a positive integer.')
         if posted_after and posted_before and posted_after > posted_before:
             raise ValueError('Input "postedAfter" must not be later than "postedBefore".')
 
@@ -376,6 +502,22 @@ async def main() -> None:
 
         # Sort by date, then keep only the requested number of posts.
         ordered = sort_posts(matches, sort_by)[:max_posts]
+
+        # Optional AI political-sentiment analysis (toggle).
+        if enable_analysis:
+            if not groq_api_key:
+                Actor.log.warning(
+                    'Political analysis is enabled but no Groq API key was provided '
+                    '(input "groqApiKey" or env GROQ_API_KEY). Skipping analysis.'
+                )
+            elif not ordered:
+                Actor.log.info('No posts to analyze.')
+            else:
+                Actor.log.info(f'Running AI political analysis on {len(ordered)} posts with model "{groq_model}"...')
+                await run_political_analysis(
+                    ordered, api_key=groq_api_key, model=groq_model, max_comments=max_comments
+                )
+
         for post in ordered:
             await Actor.push_data(post)
 

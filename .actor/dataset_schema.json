@@ -16,7 +16,10 @@
                     "timestamp",
                     "type",
                     "url",
-                    "keyword"
+                    "keyword",
+                    "isPolemic",
+                    "negativePct",
+                    "positivePct"
                 ]
             },
             "display": {
@@ -61,6 +64,18 @@
                     "keyword": {
                         "label": "Keyword",
                         "format": "text"
+                    },
+                    "isPolemic": {
+                        "label": "Polemic?",
+                        "format": "boolean"
+                    },
+                    "negativePct": {
+                        "label": "Negative %",
+                        "format": "number"
+                    },
+                    "positivePct": {
+                        "label": "Positive %",
+                        "format": "number"
                     }
                 }
             }
